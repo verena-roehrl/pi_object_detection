@@ -12,6 +12,7 @@ import time
 import cv2
 import rospy
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Int8
 import math
 
 turn = 1
@@ -19,10 +20,12 @@ _maximum_width = 400
 _camera_angle = 60
 
 # ROS stuff
-pub = rospy.Publisher('commands', Twist, queue_size=10)
+pub_turtlesim = rospy.Publisher('commands', Twist, queue_size=10)
+pub_roomba = rospy.Publisher('roomba', Int8, queue_size=10)
 rospy.init_node('publisher', anonymous=True)
 rate = rospy.Rate(10) # 10hz
 cmd_vel = Twist()
+cmd_roomba = Int8()
 
 def calculate_angle(startX, startY, endX, endY):
 	#print(turn)
@@ -42,12 +45,26 @@ def calculate_angle(startX, startY, endX, endY):
             	cmd_vel.angular.y = 0.0
 		cmd_vel.angular.z = angular_speed
 
+		#cmd_roomba.forward = False
+		cmd_roomba.data = 6
+		
+		if (angle_degree > 0):
+			#cmd_roomba.right = False
+			#cmd_roomba.left = True
+			cmd_roomba.data = 4
+		else:
+			#cmd_roomba.right = True
+			#cmd_roomba.left = False
+			cmd_roomba.data = 5
+
+
+
             	t0 = rospy.Time.now().to_sec()
 	     	current_angle = 0.0
 		print(current_angle, angle_radiants)
     		while(current_angle < abs(angle_radiants)):
-         		pub.publish(cmd_vel)
-			print(current_angle)
+         		pub_turtlesim.publish(cmd_vel)
+			pub_roomba.publish(cmd_roomba)
          		t1 = rospy.Time.now().to_sec()
         		current_angle = angular_speed*(t1-t0)
         else:
@@ -57,7 +74,14 @@ def calculate_angle(startX, startY, endX, endY):
 	   	cmd_vel.angular.x = 0.0
 	    	cmd_vel.angular.y = 0.0
 	    	cmd_vel.angular.z = 0.0
-        	pub.publish(cmd_vel)
+
+		#cmd_roomba.forward = False
+		#cmd_roomba.right = False
+		#cmd_roomba.left = False
+		cmd_roomba.data = 6
+
+        	pub_turtlesim.publish(cmd_vel)
+		pub_roomba.publish(cmd_roomba)
 	
 
 def check_bottle_area (startX, startY, endX, endY):
@@ -70,12 +94,20 @@ def check_bottle_area (startX, startY, endX, endY):
     	cmd_vel.angular.y = 0.0
 	cmd_vel.angular.z = 0.0
 
+	#cmd_roomba.right = False
+	#cmd_roomba.left = False
+
 	if(area_covered>0.2):
             	cmd_vel.linear.x = 0.0
+		#cmd_roomba.forward = False
+		cmd_roomba.data = 6
 	else:
 		cmd_vel.linear.x = 1.0
+		#cmd_roomba.forward = True
+		cmd_roomba.data = 1
 
-	pub.publish(cmd_vel)
+	pub_turtlesim.publish(cmd_vel)
+	pub_roomba.publish(cmd_roomba)
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -126,10 +158,13 @@ while not rospy.is_shutdown():
 	detections = net.forward()
 
 	# loop over the detections
+
+	bottle_found = False
 	for i in np.arange(0, detections.shape[2]):
 		# extract the confidence (i.e., probability) associated with
 		# the prediction
 		confidence = detections[0, 0, i, 2]
+		
 
 		# filter out weak detections by ensuring the `confidence` is
 		# greater than the minimum confidence
@@ -154,6 +189,17 @@ while not rospy.is_shutdown():
 				turn = 0
 			if(CLASSES[idx]=="bottle"):
 				check_bottle_area(startX, startY, endX, endY)
+				bottle_found = True
+
+	if(not(bottle_found)):
+		print("No bottle has been detected")
+		cmd_vel.linear.x = 0.0
+	    	cmd_vel.linear.y = 0.0
+	    	cmd_vel.linear.z = 0.0
+	   	cmd_vel.angular.x = 0.0
+	    	cmd_vel.angular.y = 0.0
+	    	cmd_vel.angular.z = 0.0
+        	pub_turtlesim.publish(cmd_vel)
 
 	# show the output frame
 	cv2.imshow("Frame", frame)
